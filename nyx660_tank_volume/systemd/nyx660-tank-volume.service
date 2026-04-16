@@ -1,0 +1,16 @@
+[Unit]
+Description=NYX660 Tank Volume API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/nyx660_tank_volume
+ExecStart=/opt/nyx660_tank_volume/.venv/bin/nyx660-server --config /opt/nyx660_tank_volume/config.yaml
+Restart=always
+RestartSec=3
+User=jetson
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

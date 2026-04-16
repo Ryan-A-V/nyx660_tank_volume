@@ -1,0 +1,44 @@
+server:
+  host: 0.0.0.0
+  port: 8080
+  api_token: change-me
+
+storage:
+  data_dir: ./data
+  calibration_file: ./data/empty_tank_calibration.npz
+  latest_measurement_file: ./data/latest_measurement.json
+
+camera:
+  backend: mock   # use 'scepter' on the Jetson when the SDK is installed
+  device_index: 0
+  width: 320
+  height: 240
+  fps: 5
+  depth_scale_m: 0.001
+  warmup_frames: 20
+  mount_height_m: 1.8
+  crop:
+    enabled: false
+    x_min: 0
+    x_max: 319
+    y_min: 0
+    y_max: 239
+  intrinsics:
+    fx: 215.0
+    fy: 215.0
+    cx: 159.5
+    cy: 119.5
+
+measurement:
+  min_valid_depth_m: 0.2
+  max_valid_depth_m: 5.0
+  smooth_frames: 5
+  baseline_frames: 30
+  fill_threshold_m: 0.015
+  max_height_step_m: 2.0
+  # For absolute liters, set known_volume_liters.
+  # If omitted, the API still returns relative occupancy vs the empty-tank baseline footprint.
+  known_volume_liters: null
+  outlier_clip_percentile_low: 2.0
+  outlier_clip_percentile_high: 98.0
+  occupancy_mask_min_height_m: 0.01

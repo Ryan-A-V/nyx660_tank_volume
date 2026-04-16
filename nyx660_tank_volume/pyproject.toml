@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nyx660-tank-volume"
+version = "0.1.0"
+description = "Remote irregular-contents measurement for Vzense NYX660 on Jetson Nano"
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [{name = "RyanVieira"}]
+dependencies = [
+  "fastapi>=0.110,<1",
+  "uvicorn[standard]>=0.29,<1",
+  "numpy>=1.23,<2",
+  "pydantic>=2.6,<3",
+  "PyYAML>=6,<7",
+  "python-multipart>=0.0.9,<1",
+  "Pillow>=10,<11"
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9"]
+
+[project.scripts]
+nyx660-server = "nyx660_tank_volume.main:main"
+nyx660-cli = "nyx660_tank_volume.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

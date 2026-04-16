@@ -1,0 +1,13 @@
+{
+  "timestamp_utc": "2026-04-08T15:34:25.221939+00:00",
+  "estimated_volume_m3": 1.0391861200332642,
+  "estimated_volume_liters": null,
+  "relative_fill_ratio": null,
+  "occupied_surface_area_m2": 5.266141891479492,
+  "average_fill_height_m": 0.19733348273707657,
+  "max_fill_height_m": 0.5220067501068115,
+  "valid_pixel_ratio": 1.0,
+  "notes": [
+    "Absolute liters require measurement.known_volume_liters. Returning volume from empty-tank baseline geometry only."
+  ]
+}
