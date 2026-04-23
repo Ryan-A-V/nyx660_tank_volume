@@ -44,6 +44,10 @@ EXPOSURE_SELECTORS = {
     "long": "Exp3000Us",
 }
 
+# Note: The Helios2 Wide (HTW003S) only supports these three exposure
+# values. The standard Helios2 (HLT/HTP) uses Exp62_5Us, Exp250Us,
+# and Exp1000Us instead. This mapping is correct for the Wide model.
+
 
 class Helios2WideCamera(CameraBackend):
     """
@@ -258,9 +262,11 @@ class Helios2WideCamera(CameraBackend):
         raw_z = np.ctypeslib.as_array(pdata_uint16, shape=(h * w,))
         raw_z = raw_z.reshape((h, w)).copy()  # copy to decouple from buffer
 
-        # Mark invalid pixels (0xFFFF) as NaN
+        # Mark invalid pixels as NaN.
+        # The sensor uses 0xFFFF (65535) for out-of-range / no-return pixels
+        # and 0 for pixels it could not measure. Both are invalid.
         depth_mm = raw_z.astype(np.float32)
-        invalid_mask = raw_z == 0xFFFF
+        invalid_mask = (raw_z == 0xFFFF) | (raw_z == 0)
         depth_mm[invalid_mask] = np.nan
 
         # Apply scale and offset to get millimetres, then convert to metres
