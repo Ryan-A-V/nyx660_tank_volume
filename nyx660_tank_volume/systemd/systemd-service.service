@@ -1,0 +1,36 @@
+[Unit]
+Description=Helios2 Wide Tank Volume Measurement Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=jetson
+Group=jetson
+WorkingDirectory=/opt/nyx660_tank_volume
+ExecStart=/opt/nyx660_tank_volume/.venv/bin/python -m nyx660_tank_volume.main --config /opt/nyx660_tank_volume/config.yaml
+
+# Restart on failure with a brief delay
+Restart=on-failure
+RestartSec=5
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+
+# Logging to journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=helios2-tank-volume
+
+# Resource limits
+# The Arena SDK needs access to network interfaces for GigE Vision
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/nyx660_tank_volume/data
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
