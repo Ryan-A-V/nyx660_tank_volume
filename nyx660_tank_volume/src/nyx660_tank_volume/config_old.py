@@ -22,35 +22,22 @@ class IntrinsicsConfig(BaseModel):
     cy: float
 
 
-class Helios2Config(BaseModel):
-    """Helios2 Wide specific settings. Only used when backend is 'helios2' or 'mock_helios2'."""
-
-    operating_mode: str = "5000mm"
-    exposure: str = "long"
-    spatial_filter: bool = True
-    confidence_threshold: bool = True
-    image_accumulation: int = 1
-    conversion_gain: str = "Low"
-    tank_depth_m: float = 1.22
-
-
 class CameraConfig(BaseModel):
     backend: str = "mock"
     device_index: int = 0
-    width: int = 640
-    height: int = 480
+    width: int = 320
+    height: int = 240
     fps: int = 5
     depth_scale_m: float = 0.001
     warmup_frames: int = 20
-    mount_height_m: float = 2.5
+    mount_height_m: float = 1.8
     crop: CropConfig = Field(default_factory=CropConfig)
     intrinsics: IntrinsicsConfig
-    helios2: Optional[Helios2Config] = None
 
 
 class MeasurementConfig(BaseModel):
     min_valid_depth_m: float = 0.2
-    max_valid_depth_m: float = 8.5
+    max_valid_depth_m: float = 5.0
     smooth_frames: int = 5
     baseline_frames: int = 30
     fill_threshold_m: float = 0.015
