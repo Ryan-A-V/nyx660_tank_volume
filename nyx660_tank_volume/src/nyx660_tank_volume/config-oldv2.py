@@ -73,20 +73,11 @@ class ServerConfig(BaseModel):
     api_token: str = "change-me"
 
 
-class MeasurementLoopConfig(BaseModel):
-    """Controls the continuous measurement loop behaviour."""
-
-    testing_mode: bool = True
-
-
 class AppConfig(BaseModel):
     server: ServerConfig
     storage: StorageConfig
     camera: CameraConfig
     measurement: MeasurementConfig
-    measurement_loop: Optional[MeasurementLoopConfig] = Field(
-        default_factory=MeasurementLoopConfig
-    )
 
 
 def load_config(path: str | Path) -> AppConfig:
