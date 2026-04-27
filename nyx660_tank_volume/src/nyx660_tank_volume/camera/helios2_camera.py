@@ -32,8 +32,8 @@ OPERATING_MODES = {
     "1250mm": "Distance1250mmSingleFreq",
     "3000mm": "Distance3000mmSingleFreq",
     "4000mm": "Distance4000mmSingleFreq",
-    "5000mm": "Distance5000mmSingleFreq",
-    "6000mm": "Distance6000mmMultiFreq",
+    "5000mm": "Distance5000mmMultiFreq",
+    "6000mm": "Distance6000mmSingleFreq",
     "8300mm": "Distance8300mmMultiFreq",
 }
 
