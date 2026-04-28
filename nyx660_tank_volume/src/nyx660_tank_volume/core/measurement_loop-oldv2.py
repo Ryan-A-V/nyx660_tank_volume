@@ -339,33 +339,21 @@ class MeasurementLoop:
         """
         One measurement cycle.
         Returns True if a volume result was produced, False if only
-        frames were captured (no calibration available).
-
-        In testing mode, captures enough frames to fill the entire
-        smoothing buffer in one cycle so that every trigger produces
-        a result.
+        a frame was captured (no calibration or buffer not full yet).
         """
-        # Determine how many frames to capture this cycle
-        if self._testing_mode:
-            # Fill the entire buffer in one go
-            frames_needed = self._frame_buffer.maxlen
-        else:
-            # Continuous mode: one frame per cycle, buffer fills over time
-            frames_needed = 1
+        # Capture
+        frame = self.camera.get_frame()
+        depth = preprocess_depth(frame.depth_m, self.cfg)
+        self._frame_buffer.append(depth)
 
-        for _ in range(frames_needed):
-            frame = self.camera.get_frame()
-            depth = preprocess_depth(frame.depth_m, self.cfg)
-            self._frame_buffer.append(depth)
-
-            # Update latest frame (for depth preview endpoint)
-            processed_frame = DepthFrame(
-                depth_m=depth,
-                rgb=frame.rgb,
-                timestamp_utc=frame.timestamp_utc,
-            )
-            with self._latest_lock:
-                self._latest_frame = processed_frame
+        # Update latest frame (for depth preview endpoint)
+        processed_frame = DepthFrame(
+            depth_m=depth,
+            rgb=frame.rgb,
+            timestamp_utc=frame.timestamp_utc,
+        )
+        with self._latest_lock:
+            self._latest_frame = processed_frame
 
         # Need calibration and a full buffer to compute volume
         with self._calibration_lock:
