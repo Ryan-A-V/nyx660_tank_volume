@@ -145,29 +145,23 @@ def create_calibration(
     range_mask &= baseline_depth >= cfg.measurement.min_valid_depth_m
     range_mask &= baseline_depth <= cfg.measurement.max_valid_depth_m
 
-    # Consistency mask: only keep pixels that returned valid depth
-    # in EVERY calibration frame. Edge pixels that intermittently
-    # return NaN will fail this check and be excluded. This ensures
-    # that during measurement, every pixel in the valid_mask reliably
-    # returns data, keeping the quality score high.
-    valid_per_frame = (
-        np.isfinite(stack)
-        & (stack >= cfg.measurement.min_valid_depth_m)
-        & (stack <= cfg.measurement.max_valid_depth_m)
-    )
-    always_valid = np.all(valid_per_frame, axis=0)
+    # Consistency mask: only keep pixels that were valid in >= 90%
+    # of calibration frames. This excludes flaky edge pixels that
+    # return data intermittently — they would cause quality drops
+    # during measurement when they randomly go NaN.
+    valid_per_frame = np.isfinite(stack)
+    valid_fraction = np.mean(valid_per_frame, axis=0)
+    consistency_threshold = 0.90
+    consistency_mask = valid_fraction >= consistency_threshold
 
-    total_sometimes_valid = int(np.sum(np.any(valid_per_frame, axis=0)))
-    total_always_valid = int(np.sum(always_valid))
-    removed = total_sometimes_valid - total_always_valid
-
-    range_mask &= always_valid
-    consistency_mask = always_valid
+    range_mask &= consistency_mask
 
     logger.info(
-        "Consistency filter: %d pixels always valid, %d removed (intermittent)",
-        total_always_valid,
-        removed,
+        "Consistency filter: %d/%d pixels passed %.0f%% threshold (removed %d flaky edge pixels)",
+        int(np.sum(consistency_mask)),
+        consistency_mask.size,
+        consistency_threshold * 100,
+        int(np.sum(~consistency_mask & np.any(valid_per_frame, axis=0))),
     )
 
     detection_info: dict = {}
