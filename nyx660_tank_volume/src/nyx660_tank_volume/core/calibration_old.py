@@ -53,69 +53,24 @@ class CalibrationStore:
         )
 
 
-def build_pixel_area_map_intrinsics(
-    baseline_depth_m: np.ndarray, fx: float, fy: float
-) -> np.ndarray:
-    """
-    Pinhole model pixel area.
-    Works well for narrow FoV sensors but inaccurate at wide angles.
-    """
-    return (baseline_depth_m ** 2) / (fx * fy)
+def build_pixel_area_map(baseline_depth_m: np.ndarray, fx: float, fy: float) -> np.ndarray:
+    # Approximate world area represented by each pixel on a plane parallel to the camera.
+    return (baseline_depth_m**2) / (fx * fy)
 
 
-def build_pixel_area_map_uniform(
-    valid_mask: np.ndarray, known_tank_area_m2: float
-) -> np.ndarray:
-    """
-    Uniform pixel area derived from the known physical tank floor area.
-
-    Every valid pixel gets an equal share of the total tank area.
-    This is accurate for a flat-bottomed tank viewed from directly
-    above, regardless of lens distortion, and works correctly
-    across the entire frame of a wide-angle sensor.
-    """
-    valid_count = int(np.sum(valid_mask))
-    if valid_count == 0:
-        return np.zeros_like(valid_mask, dtype=np.float32)
-
-    area_per_pixel = known_tank_area_m2 / valid_count
-    pixel_area = np.where(valid_mask, area_per_pixel, 0.0)
-    return pixel_area.astype(np.float32)
-
-
-def create_calibration(
-    depth_frames_m: list[np.ndarray], cfg: AppConfig
-) -> CalibrationBundle:
+def create_calibration(depth_frames_m: list[np.ndarray], cfg: AppConfig) -> CalibrationBundle:
     stack = np.stack(depth_frames_m, axis=0).astype(np.float32)
     baseline_depth = np.nanmedian(stack, axis=0)
     valid_mask = np.isfinite(baseline_depth)
     valid_mask &= baseline_depth >= cfg.measurement.min_valid_depth_m
     valid_mask &= baseline_depth <= cfg.measurement.max_valid_depth_m
 
-    # Choose pixel area calculation method
-    if cfg.camera.known_tank_area_m2 is not None:
-        # Uniform area mode — recommended for wide-angle sensors
-        pixel_area = build_pixel_area_map_uniform(
-            valid_mask, cfg.camera.known_tank_area_m2
-        )
-        footprint_area = cfg.camera.known_tank_area_m2
-    elif cfg.camera.intrinsics is not None:
-        # Pinhole intrinsics mode — for narrow FoV sensors
-        intr = cfg.camera.intrinsics
-        pixel_area = build_pixel_area_map_intrinsics(
-            baseline_depth, intr.fx, intr.fy
-        )
-        pixel_area = np.where(valid_mask, pixel_area, 0.0)
-        footprint_area = float(np.sum(pixel_area[valid_mask]))
-    else:
-        raise ValueError(
-            "Either camera.known_tank_area_m2 or camera.intrinsics "
-            "must be set in the config."
-        )
+    intr = cfg.camera.intrinsics
+    pixel_area = build_pixel_area_map(baseline_depth, intr.fx, intr.fy)
+    pixel_area = np.where(valid_mask, pixel_area, 0.0)
 
-    reference_integral = float(
-        np.sum(baseline_depth[valid_mask] * pixel_area[valid_mask])
-    )
+    footprint_area = float(np.sum(pixel_area[valid_mask]))
+    reference_integral = float(np.sum(baseline_depth[valid_mask] * pixel_area[valid_mask]))
 
     return CalibrationBundle(
         baseline_depth_m=baseline_depth,

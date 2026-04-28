@@ -44,9 +44,8 @@ class CameraConfig(BaseModel):
     warmup_frames: int = 20
     mount_height_m: float = 2.5
     crop: CropConfig = Field(default_factory=CropConfig)
-    intrinsics: Optional[IntrinsicsConfig] = None
+    intrinsics: IntrinsicsConfig
     helios2: Optional[Helios2Config] = None
-    known_tank_area_m2: Optional[float] = None
 
 
 class MeasurementConfig(BaseModel):
@@ -77,7 +76,7 @@ class ServerConfig(BaseModel):
 class MeasurementLoopConfig(BaseModel):
     """Controls the continuous measurement loop behaviour."""
 
-    testing_mode: bool = False
+    testing_mode: bool = True
 
 
 class AppConfig(BaseModel):
