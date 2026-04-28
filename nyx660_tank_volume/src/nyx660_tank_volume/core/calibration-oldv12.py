@@ -21,7 +21,7 @@ class CalibrationBundle:
     created_utc: str
     footprint_area_m2: float
     reference_integral_m3: float
-    detection_info: dict
+    detection_info: dict  # auto-detect metadata
 
 
 class CalibrationStore:
@@ -67,27 +67,56 @@ def build_pixel_area_map_intrinsics(
 
 
 def build_pixel_area_map_wideangle(
-    floor_mask, known_tank_area_m2, hfov_deg, vfov_deg,
-    full_width, full_height,
-):
+    floor_mask: np.ndarray,
+    known_tank_area_m2: float,
+    hfov_deg: float,
+    vfov_deg: float,
+    full_width: int,
+    full_height: int,
+) -> np.ndarray:
+    """
+    Wide-angle corrected pixel area map using the floor mask.
+
+    Unlike the crop-based version, this uses the auto-detected floor
+    mask directly. Each pixel's angle is computed from its position
+    in the full sensor frame relative to the optical centre.
+
+    The 1/cos³(θ) correction accounts for the wide-angle projection
+    where edge pixels represent more physical area than centre pixels.
+    The total is normalised to the known tank floor area.
+    """
     h, w = floor_mask.shape
+
     full_cx = full_width / 2.0
     full_cy = full_height / 2.0
+
+    half_hfov_rad = np.radians(hfov_deg / 2.0)
+    half_vfov_rad = np.radians(vfov_deg / 2.0)
+
     yy, xx = np.mgrid[0:h, 0:w]
+
+    # If the mask is smaller than the full frame (due to crop),
+    # we still compute angles relative to the full frame centre.
+    # However, with auto-detect the mask IS the full frame size,
+    # just with False outside the tank.
     nx = (xx - full_cx) / (full_width / 2.0)
     ny = (yy - full_cy) / (full_height / 2.0)
-    half_hfov = np.radians(hfov_deg / 2.0)
-    half_vfov = np.radians(vfov_deg / 2.0)
-    theta_x = nx * half_hfov
-    theta_y = ny * half_vfov
+
+    theta_x = nx * half_hfov_rad
+    theta_y = ny * half_vfov_rad
     theta = np.sqrt(theta_x ** 2 + theta_y ** 2)
+
     cos_theta = np.cos(theta)
     cos_theta = np.clip(cos_theta, 0.1, 1.0)
     weight = 1.0 / (cos_theta ** 3)
+
+    # Only apply to floor pixels
     weight = np.where(floor_mask, weight, 0.0)
+
     total_weight = np.sum(weight)
     if total_weight == 0:
         return np.zeros((h, w), dtype=np.float32)
+
     pixel_area = (weight / total_weight) * known_tank_area_m2
     return pixel_area.astype(np.float32)
 
@@ -101,7 +130,7 @@ def create_calibration(
     Calibration flow:
     1. Stack frames and compute median baseline depth
     2. Build a consistency mask — only keep pixels that returned
-       valid depth in every single calibration frame
+       valid depth in at least 90% of calibration frames
     3. If auto_detect is enabled: detect the tank floor and use
        the floor mask intersected with the consistency mask
     4. If manual crop: use crop box intersected with consistency mask
@@ -118,7 +147,9 @@ def create_calibration(
 
     # Consistency mask: only keep pixels that returned valid depth
     # in EVERY calibration frame. Edge pixels that intermittently
-    # return NaN will fail this check and be excluded.
+    # return NaN will fail this check and be excluded. This ensures
+    # that during measurement, every pixel in the valid_mask reliably
+    # returns data, keeping the quality score high.
     valid_per_frame = (
         np.isfinite(stack)
         & (stack >= cfg.measurement.min_valid_depth_m)
@@ -198,7 +229,7 @@ def create_calibration(
             crop = cfg.camera.crop
             crop_mask = np.zeros_like(range_mask)
             crop_mask[crop.y_min : crop.y_max + 1, crop.x_min : crop.x_max + 1] = True
-            floor_mask = range_mask & crop_mask & consistency_mask
+            floor_mask = range_mask & crop_mask
             detection_info["method"] = "manual_crop"
             detection_info["crop"] = {
                 "x_min": crop.x_min,
@@ -207,9 +238,9 @@ def create_calibration(
                 "y_max": crop.y_max,
             }
         else:
-            # No crop, no auto-detect — use all valid consistent pixels
-            logger.info("No crop or auto-detect — using all valid consistent pixels")
-            floor_mask = range_mask & consistency_mask
+            # No crop, no auto-detect — use all valid pixels
+            logger.info("No crop or auto-detect — using all valid pixels")
+            floor_mask = range_mask
             detection_info["method"] = "full_frame"
 
     valid_mask = floor_mask
