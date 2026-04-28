@@ -68,10 +68,6 @@ def build_pixel_area_map_wideangle(
     known_tank_area_m2: float,
     hfov_deg: float,
     vfov_deg: float,
-    full_width: int,
-    full_height: int,
-    crop_x_min: int = 0,
-    crop_y_min: int = 0,
 ) -> np.ndarray:
     """
     Wide-angle corrected pixel area map.
@@ -81,42 +77,45 @@ def build_pixel_area_map_wideangle(
     than pixels at the centre. The correction factor is 1/cos³(θ)
     where θ is the angle from the optical axis to each pixel.
 
-    IMPORTANT: Pixel angles are computed relative to the full
-    sensor frame, not the cropped region. Cropping selects a subset
-    of pixels but does not change their angular positions in the
-    lens projection. The crop offsets map each cropped pixel back
-    to its position in the full frame before computing its angle.
+    This method:
+    1. Computes the off-axis angle θ for every pixel based on the
+       camera's horizontal and vertical FoV
+    2. Weights each pixel by 1/cos³(θ) (the wide-angle area correction)
+    3. Normalises so the total area of all valid pixels equals the
+       known physical tank floor area
+
+    This produces accurate volume measurements at any position in the
+    frame — centre, edge, or corner — without needing lens-specific
+    intrinsic calibration.
     """
-    crop_h, crop_w = valid_mask.shape
+    h, w = valid_mask.shape
 
-    # Full frame centre (optical axis)
-    full_cx = full_width / 2.0
-    full_cy = full_height / 2.0
+    # Compute the angle from optical axis for each pixel
+    # Pixel coordinates normalised to [-1, 1] from centre
+    cx, cy = w / 2.0, h / 2.0
+    xx, yy = np.meshgrid(np.arange(w), np.arange(h))
+    nx = (xx - cx) / cx  # -1 to +1 across width
+    ny = (yy - cy) / cy  # -1 to +1 across height
 
-    # Half-angle per pixel in the full frame
+    # Convert normalised pixel position to angle from optical axis
+    # At the edge of the frame, the angle equals half the FoV
     half_hfov_rad = np.radians(hfov_deg / 2.0)
     half_vfov_rad = np.radians(vfov_deg / 2.0)
 
-    # Build pixel coordinate grids in the cropped frame
-    xx_crop, yy_crop = np.meshgrid(
-        np.arange(crop_w), np.arange(crop_h)
-    )
-
-    # Map cropped pixel positions back to full frame positions
-    xx_full = xx_crop + crop_x_min
-    yy_full = yy_crop + crop_y_min
-
-    # Normalise to [-1, 1] relative to full frame centre
-    nx = (xx_full - full_cx) / (full_width / 2.0)
-    ny = (yy_full - full_cy) / (full_height / 2.0)
-
-    # Angle from optical axis per pixel (equidistant projection)
+    # Angle in each axis (using equidistant projection model,
+    # which is common for wide-angle ToF cameras)
     theta_x = nx * half_hfov_rad
     theta_y = ny * half_vfov_rad
+
+    # Total off-axis angle
     theta = np.sqrt(theta_x ** 2 + theta_y ** 2)
 
     # Wide-angle area correction: 1/cos³(θ)
+    # This accounts for:
+    #   1/cos(θ) — the projected pixel footprint stretches
+    #   1/cos²(θ) — the distance to the surface increases at oblique angles
     cos_theta = np.cos(theta)
+    # Clamp to avoid division by zero at extreme angles
     cos_theta = np.clip(cos_theta, 0.1, 1.0)
     weight = 1.0 / (cos_theta ** 3)
 
@@ -147,23 +146,26 @@ def create_calibration(
         hfov = 108.0  # Helios2 Wide horizontal FoV
         vfov = 78.0   # Helios2 Wide vertical FoV
 
-        # Pass full frame dimensions and crop offset so pixel angles
-        # are computed relative to the optical axis, not the crop centre
-        crop_x_min = 0
-        crop_y_min = 0
+        # If crop is enabled, scale the FoV to match the cropped region
         if cfg.camera.crop.enabled:
-            crop_x_min = cfg.camera.crop.x_min
-            crop_y_min = cfg.camera.crop.y_min
+            crop = cfg.camera.crop
+            crop_w = crop.x_max - crop.x_min + 1
+            crop_h = crop.y_max - crop.y_min + 1
+            # The crop region represents a fraction of the full FoV
+            # Compute the angular span of the cropped region
+            full_w = cfg.camera.width
+            full_h = cfg.camera.height
+            # Centre offset of crop within full frame
+            crop_cx = (crop.x_min + crop.x_max) / 2.0
+            crop_cy = (crop.y_min + crop.y_max) / 2.0
+            # Fraction of full frame that the crop spans
+            frac_w = crop_w / full_w
+            frac_h = crop_h / full_h
+            hfov = hfov * frac_w
+            vfov = vfov * frac_h
 
         pixel_area = build_pixel_area_map_wideangle(
-            valid_mask,
-            cfg.camera.known_tank_area_m2,
-            hfov,
-            vfov,
-            full_width=cfg.camera.width,
-            full_height=cfg.camera.height,
-            crop_x_min=crop_x_min,
-            crop_y_min=crop_y_min,
+            valid_mask, cfg.camera.known_tank_area_m2, hfov, vfov
         )
         footprint_area = cfg.camera.known_tank_area_m2
 
