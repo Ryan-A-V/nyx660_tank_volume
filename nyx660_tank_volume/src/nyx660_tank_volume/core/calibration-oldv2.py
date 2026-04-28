@@ -63,71 +63,23 @@ def build_pixel_area_map_intrinsics(
     return (baseline_depth_m ** 2) / (fx * fy)
 
 
-def build_pixel_area_map_wideangle(
-    valid_mask: np.ndarray,
-    known_tank_area_m2: float,
-    hfov_deg: float,
-    vfov_deg: float,
+def build_pixel_area_map_uniform(
+    valid_mask: np.ndarray, known_tank_area_m2: float
 ) -> np.ndarray:
     """
-    Wide-angle corrected pixel area map.
+    Uniform pixel area derived from the known physical tank floor area.
 
-    For a downward-facing wide-angle camera over a flat surface,
-    pixels at the edge of the frame represent more physical area
-    than pixels at the centre. The correction factor is 1/cos³(θ)
-    where θ is the angle from the optical axis to each pixel.
-
-    This method:
-    1. Computes the off-axis angle θ for every pixel based on the
-       camera's horizontal and vertical FoV
-    2. Weights each pixel by 1/cos³(θ) (the wide-angle area correction)
-    3. Normalises so the total area of all valid pixels equals the
-       known physical tank floor area
-
-    This produces accurate volume measurements at any position in the
-    frame — centre, edge, or corner — without needing lens-specific
-    intrinsic calibration.
+    Every valid pixel gets an equal share of the total tank area.
+    This is accurate for a flat-bottomed tank viewed from directly
+    above, regardless of lens distortion, and works correctly
+    across the entire frame of a wide-angle sensor.
     """
-    h, w = valid_mask.shape
-
-    # Compute the angle from optical axis for each pixel
-    # Pixel coordinates normalised to [-1, 1] from centre
-    cx, cy = w / 2.0, h / 2.0
-    xx, yy = np.meshgrid(np.arange(w), np.arange(h))
-    nx = (xx - cx) / cx  # -1 to +1 across width
-    ny = (yy - cy) / cy  # -1 to +1 across height
-
-    # Convert normalised pixel position to angle from optical axis
-    # At the edge of the frame, the angle equals half the FoV
-    half_hfov_rad = np.radians(hfov_deg / 2.0)
-    half_vfov_rad = np.radians(vfov_deg / 2.0)
-
-    # Angle in each axis (using equidistant projection model,
-    # which is common for wide-angle ToF cameras)
-    theta_x = nx * half_hfov_rad
-    theta_y = ny * half_vfov_rad
-
-    # Total off-axis angle
-    theta = np.sqrt(theta_x ** 2 + theta_y ** 2)
-
-    # Wide-angle area correction: 1/cos³(θ)
-    # This accounts for:
-    #   1/cos(θ) — the projected pixel footprint stretches
-    #   1/cos²(θ) — the distance to the surface increases at oblique angles
-    cos_theta = np.cos(theta)
-    # Clamp to avoid division by zero at extreme angles
-    cos_theta = np.clip(cos_theta, 0.1, 1.0)
-    weight = 1.0 / (cos_theta ** 3)
-
-    # Zero out invalid pixels
-    weight = np.where(valid_mask, weight, 0.0)
-
-    # Normalise so total area equals known tank area
-    total_weight = np.sum(weight)
-    if total_weight == 0:
+    valid_count = int(np.sum(valid_mask))
+    if valid_count == 0:
         return np.zeros_like(valid_mask, dtype=np.float32)
 
-    pixel_area = (weight / total_weight) * known_tank_area_m2
+    area_per_pixel = known_tank_area_m2 / valid_count
+    pixel_area = np.where(valid_mask, area_per_pixel, 0.0)
     return pixel_area.astype(np.float32)
 
 
@@ -142,33 +94,11 @@ def create_calibration(
 
     # Choose pixel area calculation method
     if cfg.camera.known_tank_area_m2 is not None:
-        # Wide-angle corrected mode — recommended for Helios2 Wide
-        hfov = 108.0  # Helios2 Wide horizontal FoV
-        vfov = 78.0   # Helios2 Wide vertical FoV
-
-        # If crop is enabled, scale the FoV to match the cropped region
-        if cfg.camera.crop.enabled:
-            crop = cfg.camera.crop
-            crop_w = crop.x_max - crop.x_min + 1
-            crop_h = crop.y_max - crop.y_min + 1
-            # The crop region represents a fraction of the full FoV
-            # Compute the angular span of the cropped region
-            full_w = cfg.camera.width
-            full_h = cfg.camera.height
-            # Centre offset of crop within full frame
-            crop_cx = (crop.x_min + crop.x_max) / 2.0
-            crop_cy = (crop.y_min + crop.y_max) / 2.0
-            # Fraction of full frame that the crop spans
-            frac_w = crop_w / full_w
-            frac_h = crop_h / full_h
-            hfov = hfov * frac_w
-            vfov = vfov * frac_h
-
-        pixel_area = build_pixel_area_map_wideangle(
-            valid_mask, cfg.camera.known_tank_area_m2, hfov, vfov
+        # Uniform area mode — recommended for wide-angle sensors
+        pixel_area = build_pixel_area_map_uniform(
+            valid_mask, cfg.camera.known_tank_area_m2
         )
         footprint_area = cfg.camera.known_tank_area_m2
-
     elif cfg.camera.intrinsics is not None:
         # Pinhole intrinsics mode — for narrow FoV sensors
         intr = cfg.camera.intrinsics
@@ -177,7 +107,6 @@ def create_calibration(
         )
         pixel_area = np.where(valid_mask, pixel_area, 0.0)
         footprint_area = float(np.sum(pixel_area[valid_mask]))
-
     else:
         raise ValueError(
             "Either camera.known_tank_area_m2 or camera.intrinsics "
