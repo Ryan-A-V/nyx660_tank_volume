@@ -66,7 +66,7 @@ def _build_volume_correction_map(h: int, w: int, full_width: int, full_height: i
     # Empirical correction factors at measured distances
     # These correct the cos^3 area model's known errors
     cal_dist =       np.array([0.00, 0.19, 0.40, 0.61, 0.82, 0.90, 0.95, 1.20])
-    cal_correction = np.array([0.48, 0.48, 0.72, 1.00, 1.15, 1.21, 1.21, 1.21])
+    cal_correction = np.array([0.44, 0.44, 0.68, 1.00, 1.15, 1.21, 1.21, 1.21])
 
     correction = np.interp(dist, cal_dist, cal_correction)
     return correction.astype(np.float32)
