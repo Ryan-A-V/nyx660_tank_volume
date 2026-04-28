@@ -204,10 +204,10 @@ def create_calibration(
         }
 
         if result.success:
-            floor_mask = result.floor_mask & range_mask & consistency_mask
+            floor_mask = result.floor_mask & range_mask
             logger.info(
-                "Auto-detect succeeded: %d floor pixels (after consistency filter), depth=%.3f m",
-                int(np.sum(floor_mask)),
+                "Auto-detect succeeded: %d floor pixels, depth=%.3f m",
+                result.floor_pixel_count,
                 result.floor_depth_m,
             )
         else:
