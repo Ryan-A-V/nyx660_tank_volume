@@ -129,13 +129,12 @@ def create_calibration(
 
     Calibration flow:
     1. Stack frames and compute median baseline depth
-    2. Build a consistency mask — only keep pixels that returned
-       valid depth in at least 90% of calibration frames
-    3. If auto_detect is enabled: detect the tank floor and use
-       the floor mask intersected with the consistency mask
-    4. If manual crop: use crop box intersected with consistency mask
-    5. Compute per-pixel area
-    6. Bundle everything and return
+    2. If auto_detect is enabled: detect the tank floor automatically
+       and use the floor mask as the valid region
+    3. If manual crop is enabled (and auto_detect is off or failed):
+       use the crop box as the valid region
+    4. Compute per-pixel area using the appropriate method
+    5. Bundle everything and return
     """
     stack = np.stack(depth_frames_m, axis=0).astype(np.float32)
     baseline_depth = np.nanmedian(stack, axis=0)
@@ -144,25 +143,6 @@ def create_calibration(
     range_mask = np.isfinite(baseline_depth)
     range_mask &= baseline_depth >= cfg.measurement.min_valid_depth_m
     range_mask &= baseline_depth <= cfg.measurement.max_valid_depth_m
-
-    # Consistency mask: only keep pixels that were valid in >= 90%
-    # of calibration frames. This excludes flaky edge pixels that
-    # return data intermittently — they would cause quality drops
-    # during measurement when they randomly go NaN.
-    valid_per_frame = np.isfinite(stack)
-    valid_fraction = np.mean(valid_per_frame, axis=0)
-    consistency_threshold = 0.90
-    consistency_mask = valid_fraction >= consistency_threshold
-
-    range_mask &= consistency_mask
-
-    logger.info(
-        "Consistency filter: %d/%d pixels passed %.0f%% threshold (removed %d flaky edge pixels)",
-        int(np.sum(consistency_mask)),
-        consistency_mask.size,
-        consistency_threshold * 100,
-        int(np.sum(~consistency_mask & np.any(valid_per_frame, axis=0))),
-    )
 
     detection_info: dict = {}
 
