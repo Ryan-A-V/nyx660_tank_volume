@@ -39,39 +39,6 @@ def smooth_depth(frames: list[np.ndarray]) -> np.ndarray:
     return np.nanmedian(np.stack(frames, axis=0).astype(np.float32), axis=0)
 
 
-def _build_volume_correction_map(h: int, w: int, full_width: int, full_height: int) -> np.ndarray:
-    """
-    Build a per-pixel volume correction factor based on radial
-    distance from the optical centre.
-
-    The cos^3 area model distributes the total tank area correctly
-    but over-assigns area to centre pixels and under-assigns to
-    edge pixels. This correction factor is applied to each pixel's
-    volume contribution (delta_h * pixel_area) AFTER the area
-    calculation, so normalisation cannot cancel it out.
-
-    Empirically measured with a 4'x4' plywood sheet at known positions:
-        dist 0.19 (centre): area was 1.671x too high -> correction 0.598
-        dist 0.90 (corner): area was 0.947x -> correction 1.056
-
-    The correction curve interpolates between these measured points.
-    """
-    full_cx = full_width / 2.0
-    full_cy = full_height / 2.0
-    yy, xx = np.mgrid[0:h, 0:w]
-    nx = (xx - full_cx) / (full_width / 2.0)
-    ny = (yy - full_cy) / (full_height / 2.0)
-    dist = np.sqrt(nx ** 2 + ny ** 2)
-
-    # Empirical correction factors at measured distances
-    # These correct the cos^3 area model's known errors
-    cal_dist =       np.array([0.00, 0.19, 0.40, 0.61, 0.82, 0.90, 0.95, 1.20])
-    cal_correction = np.array([0.60, 0.60, 0.80, 1.00, 1.05, 1.06, 1.06, 1.06])
-
-    correction = np.interp(dist, cal_dist, cal_correction)
-    return correction.astype(np.float32)
-
-
 def estimate_volume(current_depth_m: np.ndarray, calib: CalibrationBundle, cfg: AppConfig) -> MeasurementResult:
     notes: list[str] = []
     current = current_depth_m.astype(np.float32)
@@ -80,6 +47,7 @@ def estimate_volume(current_depth_m: np.ndarray, calib: CalibrationBundle, cfg: 
     valid = calib.valid_mask & np.isfinite(current)
 
     # Quality: what fraction of FLOOR pixels returned valid data
+    # This measures sensor reliability, not how much of the frame is floor
     floor_pixel_count = float(np.sum(calib.valid_mask))
     valid_floor_count = float(np.sum(valid))
     valid_pixel_ratio = (
@@ -97,18 +65,9 @@ def estimate_volume(current_depth_m: np.ndarray, calib: CalibrationBundle, cfg: 
     delta_h = np.clip(delta_h, 0.0, cfg.measurement.max_height_step_m)
     delta_h[delta_h < cfg.measurement.fill_threshold_m] = 0.0
 
-    # Per-pixel volume with position-dependent correction
-    h, w = current.shape
-    correction_map = _build_volume_correction_map(
-        h, w, cfg.camera.width, cfg.camera.height
-    )
-    per_pixel_volume = delta_h * calib.pixel_area_m2 * correction_map
-
+    per_pixel_volume = delta_h * calib.pixel_area_m2
     est_volume_m3 = float(np.sum(per_pixel_volume))
-
-    # Occupied area also needs correction for consistency
-    corrected_area = calib.pixel_area_m2 * correction_map
-    occupied_area = float(np.sum(corrected_area[delta_h > cfg.measurement.occupancy_mask_min_height_m]))
+    occupied_area = float(np.sum(calib.pixel_area_m2[delta_h > cfg.measurement.occupancy_mask_min_height_m]))
     avg_height = est_volume_m3 / occupied_area if occupied_area > 0 else 0.0
     max_height = float(np.nanmax(delta_h)) if np.any(delta_h > 0) else 0.0
 
