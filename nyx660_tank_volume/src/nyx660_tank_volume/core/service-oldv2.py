@@ -119,20 +119,12 @@ class TankVolumeService:
         if self._loop is not None:
             self._loop.update_calibration(self.calibration)
 
-        response = {
+        return {
             "status": "ok",
             "created_utc": self.calibration.created_utc,
             "footprint_area_m2": self.calibration.footprint_area_m2,
             "frame_count": frame_count,
-            "detection": self.calibration.detection_info,
         }
-
-        # Surface warnings to the top level for visibility
-        warnings = self.calibration.detection_info.get("warnings", [])
-        if warnings:
-            response["warnings"] = warnings
-
-        return response
 
     # ------------------------------------------------------------------
     # Read latest data (non-blocking, reads from the loop)

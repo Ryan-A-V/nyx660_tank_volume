@@ -23,66 +23,15 @@ class IntrinsicsConfig(BaseModel):
 
 
 class Helios2Config(BaseModel):
-    """Helios2 Wide specific settings."""
+    """Helios2 Wide specific settings. Only used when backend is 'helios2' or 'mock_helios2'."""
 
     operating_mode: str = "5000mm"
     exposure: str = "long"
     spatial_filter: bool = True
     confidence_threshold: bool = True
-    image_accumulation: int = 4
+    image_accumulation: int = 1
     conversion_gain: str = "Low"
     tank_depth_m: float = 1.22
-
-
-class TankConfig(BaseModel):
-    """
-    Physical tank dimensions. Used by auto-detection to compute
-    pixel area mapping and validate the detected floor region.
-    """
-
-    length_m: float
-    width_m: float
-    depth_m: float
-
-    @property
-    def floor_area_m2(self) -> float:
-        return self.length_m * self.width_m
-
-    @property
-    def volume_liters(self) -> float:
-        return self.length_m * self.width_m * self.depth_m * 1000.0
-
-
-class AutoDetectConfig(BaseModel):
-    """
-    Controls for the automatic tank boundary detection during calibration.
-
-    floor_tolerance_m:
-        Pixels within this tolerance of the median floor depth are
-        considered floor pixels. Larger values include more pixels
-        (good for uneven floors) but risk including wall surfaces.
-
-    min_floor_fraction:
-        Minimum fraction of the frame that must be detected as floor
-        for auto-detection to succeed. If below this, auto-detect
-        fails and falls back to manual crop.
-
-    morphology_kernel:
-        Size of the morphological closing kernel (pixels) used to
-        fill small holes in the detected floor mask. Larger values
-        fill bigger gaps but may bridge across narrow walls.
-    """
-
-    enabled: bool = True
-    floor_tolerance_m: float = 0.10
-    min_floor_fraction: float = 0.30
-    morphology_kernel: int = 7
-
-
-class MeasurementLoopConfig(BaseModel):
-    """Controls the continuous measurement loop behaviour."""
-
-    testing_mode: bool = False
 
 
 class CameraConfig(BaseModel):
@@ -101,11 +50,11 @@ class CameraConfig(BaseModel):
 
 
 class MeasurementConfig(BaseModel):
-    min_valid_depth_m: float = 0.3
+    min_valid_depth_m: float = 0.2
     max_valid_depth_m: float = 8.5
-    smooth_frames: int = 3
+    smooth_frames: int = 5
     baseline_frames: int = 30
-    fill_threshold_m: float = 0.003
+    fill_threshold_m: float = 0.015
     max_height_step_m: float = 2.0
     known_volume_liters: Optional[float] = None
     outlier_clip_percentile_low: float = 2.0
@@ -125,13 +74,17 @@ class ServerConfig(BaseModel):
     api_token: str = "change-me"
 
 
+class MeasurementLoopConfig(BaseModel):
+    """Controls the continuous measurement loop behaviour."""
+
+    testing_mode: bool = False
+
+
 class AppConfig(BaseModel):
     server: ServerConfig
     storage: StorageConfig
     camera: CameraConfig
     measurement: MeasurementConfig
-    tank: Optional[TankConfig] = None
-    auto_detect: AutoDetectConfig = Field(default_factory=AutoDetectConfig)
     measurement_loop: Optional[MeasurementLoopConfig] = Field(
         default_factory=MeasurementLoopConfig
     )
@@ -142,12 +95,4 @@ def load_config(path: str | Path) -> AppConfig:
         raw = yaml.safe_load(f)
     cfg = AppConfig.model_validate(raw)
     Path(cfg.storage.data_dir).mkdir(parents=True, exist_ok=True)
-
-    # Auto-populate known_volume_liters and known_tank_area_m2 from tank dims
-    if cfg.tank is not None:
-        if cfg.measurement.known_volume_liters is None:
-            cfg.measurement.known_volume_liters = cfg.tank.volume_liters
-        if cfg.camera.known_tank_area_m2 is None:
-            cfg.camera.known_tank_area_m2 = cfg.tank.floor_area_m2
-
     return cfg

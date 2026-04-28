@@ -1,0 +1,74 @@
+# =============================================================================
+# Tank Volume Measurement — Production Config (Simplified)
+# =============================================================================
+# This is all an operator needs to fill in for a new deployment.
+# Auto-detection handles crop boundaries and pixel area mapping.
+# =============================================================================
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  api_token: "SET-A-REAL-TOKEN-HERE"
+
+storage:
+  data_dir: "./data"
+  calibration_file: "./data/empty_tank_calibration.npz"
+  latest_measurement_file: "./data/latest_measurement.json"
+
+# ---- The only section that changes per-site ----
+
+tank:
+  length_m: 6.096    # measure the tank interior length (20 ft = 6.096 m)
+  width_m: 3.048     # measure the tank interior width  (10 ft = 3.048 m)
+  depth_m: 1.219     # measure the tank interior depth  (4 ft  = 1.219 m)
+
+camera:
+  backend: "helios2"
+  device_index: 0
+  width: 640
+  height: 480
+  warmup_frames: 10
+  mount_height_m: 2.4  # measure: sensor lens to tank floor (metres)
+
+  # Crop is handled automatically. Only enable manual crop if
+  # auto-detect fails at your site.
+  crop:
+    enabled: false
+
+  helios2:
+    # Pick based on mount_height_m:
+    #   under 1.25 m  -> "1250mm"
+    #   under 3.0 m   -> "3000mm"
+    #   under 5.0 m   -> "5000mm"  (most common)
+    #   under 6.0 m   -> "6000mm"
+    #   under 8.3 m   -> "8300mm"
+    operating_mode: "5000mm"
+    exposure: "long"
+    spatial_filter: true
+    confidence_threshold: true
+    image_accumulation: 4
+    conversion_gain: "Low"
+
+# ---- Auto-detection (usually leave defaults) ----
+
+auto_detect:
+  enabled: true
+  floor_tolerance_m: 0.10    # how much depth variation to allow in "floor"
+  min_floor_fraction: 0.30   # fail if less than 30% of pixels are floor
+  morphology_kernel: 7       # hole-filling kernel size
+
+# ---- Measurement (usually leave defaults) ----
+
+measurement:
+  min_valid_depth_m: 0.3
+  max_valid_depth_m: 8.5
+  smooth_frames: 3
+  baseline_frames: 30
+  fill_threshold_m: 0.003
+  max_height_step_m: 1.5
+
+  # Auto-populated from tank dimensions. Override here if needed.
+  # known_volume_liters: 22653
+
+measurement_loop:
+  testing_mode: false   # set true for initial validation

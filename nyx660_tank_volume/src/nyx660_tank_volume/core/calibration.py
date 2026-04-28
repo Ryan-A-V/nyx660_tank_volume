@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import numpy as np
 
 from nyx660_tank_volume.config import AppConfig
+from nyx660_tank_volume.core.tank_detect import detect_tank_floor
 from nyx660_tank_volume.utils.io import load_npz, save_npz
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -17,6 +21,7 @@ class CalibrationBundle:
     created_utc: str
     footprint_area_m2: float
     reference_integral_m3: float
+    detection_info: dict  # auto-detect metadata
 
 
 class CalibrationStore:
@@ -50,83 +55,67 @@ class CalibrationStore:
             created_utc=str(data["created_utc"].tolist()),
             footprint_area_m2=float(data["footprint_area_m2"]),
             reference_integral_m3=float(data["reference_integral_m3"]),
+            detection_info={},
         )
 
 
 def build_pixel_area_map_intrinsics(
     baseline_depth_m: np.ndarray, fx: float, fy: float
 ) -> np.ndarray:
-    """
-    Pinhole model pixel area.
-    Works well for narrow FoV sensors but inaccurate at wide angles.
-    """
+    """Pinhole model pixel area. For narrow FoV sensors."""
     return (baseline_depth_m ** 2) / (fx * fy)
 
 
 def build_pixel_area_map_wideangle(
-    valid_mask: np.ndarray,
+    floor_mask: np.ndarray,
     known_tank_area_m2: float,
     hfov_deg: float,
     vfov_deg: float,
     full_width: int,
     full_height: int,
-    crop_x_min: int = 0,
-    crop_y_min: int = 0,
 ) -> np.ndarray:
     """
-    Wide-angle corrected pixel area map.
+    Wide-angle corrected pixel area map using the floor mask.
 
-    For a downward-facing wide-angle camera over a flat surface,
-    pixels at the edge of the frame represent more physical area
-    than pixels at the centre. The correction factor is 1/cos³(θ)
-    where θ is the angle from the optical axis to each pixel.
+    Unlike the crop-based version, this uses the auto-detected floor
+    mask directly. Each pixel's angle is computed from its position
+    in the full sensor frame relative to the optical centre.
 
-    IMPORTANT: Pixel angles are computed relative to the full
-    sensor frame, not the cropped region. Cropping selects a subset
-    of pixels but does not change their angular positions in the
-    lens projection. The crop offsets map each cropped pixel back
-    to its position in the full frame before computing its angle.
+    The 1/cos³(θ) correction accounts for the wide-angle projection
+    where edge pixels represent more physical area than centre pixels.
+    The total is normalised to the known tank floor area.
     """
-    crop_h, crop_w = valid_mask.shape
+    h, w = floor_mask.shape
 
-    # Full frame centre (optical axis)
     full_cx = full_width / 2.0
     full_cy = full_height / 2.0
 
-    # Half-angle per pixel in the full frame
     half_hfov_rad = np.radians(hfov_deg / 2.0)
     half_vfov_rad = np.radians(vfov_deg / 2.0)
 
-    # Build pixel coordinate grids in the cropped frame
-    xx_crop, yy_crop = np.meshgrid(
-        np.arange(crop_w), np.arange(crop_h)
-    )
+    yy, xx = np.mgrid[0:h, 0:w]
 
-    # Map cropped pixel positions back to full frame positions
-    xx_full = xx_crop + crop_x_min
-    yy_full = yy_crop + crop_y_min
+    # If the mask is smaller than the full frame (due to crop),
+    # we still compute angles relative to the full frame centre.
+    # However, with auto-detect the mask IS the full frame size,
+    # just with False outside the tank.
+    nx = (xx - full_cx) / (full_width / 2.0)
+    ny = (yy - full_cy) / (full_height / 2.0)
 
-    # Normalise to [-1, 1] relative to full frame centre
-    nx = (xx_full - full_cx) / (full_width / 2.0)
-    ny = (yy_full - full_cy) / (full_height / 2.0)
-
-    # Angle from optical axis per pixel (equidistant projection)
     theta_x = nx * half_hfov_rad
     theta_y = ny * half_vfov_rad
     theta = np.sqrt(theta_x ** 2 + theta_y ** 2)
 
-    # Wide-angle area correction: 1/cos³(θ)
     cos_theta = np.cos(theta)
     cos_theta = np.clip(cos_theta, 0.1, 1.0)
     weight = 1.0 / (cos_theta ** 3)
 
-    # Zero out invalid pixels
-    weight = np.where(valid_mask, weight, 0.0)
+    # Only apply to floor pixels
+    weight = np.where(floor_mask, weight, 0.0)
 
-    # Normalise so total area equals known tank area
     total_weight = np.sum(weight)
     if total_weight == 0:
-        return np.zeros_like(valid_mask, dtype=np.float32)
+        return np.zeros((h, w), dtype=np.float32)
 
     pixel_area = (weight / total_weight) * known_tank_area_m2
     return pixel_area.astype(np.float32)
@@ -135,40 +124,124 @@ def build_pixel_area_map_wideangle(
 def create_calibration(
     depth_frames_m: list[np.ndarray], cfg: AppConfig
 ) -> CalibrationBundle:
+    """
+    Create a calibration from depth frames of an empty tank.
+
+    Calibration flow:
+    1. Stack frames and compute median baseline depth
+    2. If auto_detect is enabled: detect the tank floor automatically
+       and use the floor mask as the valid region
+    3. If manual crop is enabled (and auto_detect is off or failed):
+       use the crop box as the valid region
+    4. Compute per-pixel area using the appropriate method
+    5. Bundle everything and return
+    """
     stack = np.stack(depth_frames_m, axis=0).astype(np.float32)
     baseline_depth = np.nanmedian(stack, axis=0)
-    valid_mask = np.isfinite(baseline_depth)
-    valid_mask &= baseline_depth >= cfg.measurement.min_valid_depth_m
-    valid_mask &= baseline_depth <= cfg.measurement.max_valid_depth_m
 
-    # Choose pixel area calculation method
-    if cfg.camera.known_tank_area_m2 is not None:
-        # Wide-angle corrected mode — recommended for Helios2 Wide
-        hfov = 108.0  # Helios2 Wide horizontal FoV
-        vfov = 78.0   # Helios2 Wide vertical FoV
+    # Basic valid mask from depth range
+    range_mask = np.isfinite(baseline_depth)
+    range_mask &= baseline_depth >= cfg.measurement.min_valid_depth_m
+    range_mask &= baseline_depth <= cfg.measurement.max_valid_depth_m
 
-        # Pass full frame dimensions and crop offset so pixel angles
-        # are computed relative to the optical axis, not the crop centre
-        crop_x_min = 0
-        crop_y_min = 0
+    detection_info: dict = {}
+
+    # ----- Determine the floor mask -----
+
+    floor_mask = None
+
+    # Try auto-detection first
+    if cfg.auto_detect.enabled:
+        logger.info("Running automatic tank floor detection...")
+
+        # Determine known tank area for validation
+        detect_tank_area = 0.0
+        if cfg.tank is not None:
+            detect_tank_area = cfg.tank.floor_area_m2
+        elif cfg.camera.known_tank_area_m2 is not None:
+            detect_tank_area = cfg.camera.known_tank_area_m2
+
+        result = detect_tank_floor(
+            baseline_depth_m=baseline_depth,
+            mount_height_m=cfg.camera.mount_height_m,
+            known_tank_area_m2=detect_tank_area,
+            floor_tolerance_m=cfg.auto_detect.floor_tolerance_m,
+            min_floor_fraction=cfg.auto_detect.min_floor_fraction,
+            morphology_kernel=cfg.auto_detect.morphology_kernel,
+            min_valid_depth_m=cfg.measurement.min_valid_depth_m,
+            max_valid_depth_m=cfg.measurement.max_valid_depth_m,
+        )
+
+        detection_info = {
+            "method": "auto_detect",
+            "success": result.success,
+            "message": result.message,
+            "warnings": result.warnings,
+            "floor_depth_m": result.floor_depth_m,
+            "floor_pixel_count": result.floor_pixel_count,
+            "floor_fraction": result.floor_fraction,
+            "detected_bounds": result.detected_bounds,
+        }
+
+        if result.success:
+            floor_mask = result.floor_mask & range_mask
+            logger.info(
+                "Auto-detect succeeded: %d floor pixels, depth=%.3f m",
+                result.floor_pixel_count,
+                result.floor_depth_m,
+            )
+        else:
+            logger.warning(
+                "Auto-detect failed: %s. Falling back to manual crop.",
+                result.message,
+            )
+
+    # Fall back to manual crop if auto-detect is off or failed
+    if floor_mask is None:
         if cfg.camera.crop.enabled:
-            crop_x_min = cfg.camera.crop.x_min
-            crop_y_min = cfg.camera.crop.y_min
+            logger.info("Using manual crop box for floor mask")
+            crop = cfg.camera.crop
+            crop_mask = np.zeros_like(range_mask)
+            crop_mask[crop.y_min : crop.y_max + 1, crop.x_min : crop.x_max + 1] = True
+            floor_mask = range_mask & crop_mask
+            detection_info["method"] = "manual_crop"
+            detection_info["crop"] = {
+                "x_min": crop.x_min,
+                "x_max": crop.x_max,
+                "y_min": crop.y_min,
+                "y_max": crop.y_max,
+            }
+        else:
+            # No crop, no auto-detect — use all valid pixels
+            logger.info("No crop or auto-detect — using all valid pixels")
+            floor_mask = range_mask
+            detection_info["method"] = "full_frame"
 
+    valid_mask = floor_mask
+
+    # ----- Compute pixel area -----
+
+    # Determine the known tank area
+    known_area = None
+    if cfg.camera.known_tank_area_m2 is not None:
+        known_area = cfg.camera.known_tank_area_m2
+    elif cfg.tank is not None:
+        known_area = cfg.tank.floor_area_m2
+
+    if known_area is not None:
+        # Wide-angle corrected area using floor mask
         pixel_area = build_pixel_area_map_wideangle(
-            valid_mask,
-            cfg.camera.known_tank_area_m2,
-            hfov,
-            vfov,
+            floor_mask=valid_mask,
+            known_tank_area_m2=known_area,
+            hfov_deg=108.0,
+            vfov_deg=78.0,
             full_width=cfg.camera.width,
             full_height=cfg.camera.height,
-            crop_x_min=crop_x_min,
-            crop_y_min=crop_y_min,
         )
-        footprint_area = cfg.camera.known_tank_area_m2
+        footprint_area = known_area
 
     elif cfg.camera.intrinsics is not None:
-        # Pinhole intrinsics mode — for narrow FoV sensors
+        # Pinhole intrinsics mode
         intr = cfg.camera.intrinsics
         pixel_area = build_pixel_area_map_intrinsics(
             baseline_depth, intr.fx, intr.fy
@@ -178,8 +251,9 @@ def create_calibration(
 
     else:
         raise ValueError(
-            "Either camera.known_tank_area_m2 or camera.intrinsics "
-            "must be set in the config."
+            "Cannot compute pixel area. Provide one of: "
+            "tank dimensions (tank.length_m, tank.width_m), "
+            "camera.known_tank_area_m2, or camera.intrinsics."
         )
 
     reference_integral = float(
@@ -193,4 +267,5 @@ def create_calibration(
         created_utc=datetime.now(timezone.utc).isoformat(),
         footprint_area_m2=footprint_area,
         reference_integral_m3=reference_integral,
+        detection_info=detection_info,
     )
