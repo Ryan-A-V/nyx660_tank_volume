@@ -42,19 +42,8 @@ def smooth_depth(frames: list[np.ndarray]) -> np.ndarray:
 def estimate_volume(current_depth_m: np.ndarray, calib: CalibrationBundle, cfg: AppConfig) -> MeasurementResult:
     notes: list[str] = []
     current = current_depth_m.astype(np.float32)
-
-    # valid = pixels that are in the floor mask AND have valid depth now
     valid = calib.valid_mask & np.isfinite(current)
-
-    # Quality: what fraction of FLOOR pixels returned valid data
-    # This measures sensor reliability, not how much of the frame is floor
-    floor_pixel_count = float(np.sum(calib.valid_mask))
-    valid_floor_count = float(np.sum(valid))
-    valid_pixel_ratio = (
-        valid_floor_count / floor_pixel_count
-        if floor_pixel_count > 0
-        else 0.0
-    )
+    valid_pixel_ratio = float(np.mean(valid)) if valid.size else 0.0
 
     delta_h = calib.baseline_depth_m - current
     delta_h = np.where(valid, delta_h, 0.0)
