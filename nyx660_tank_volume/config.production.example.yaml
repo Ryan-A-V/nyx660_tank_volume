@@ -64,7 +64,7 @@ measurement:
   max_valid_depth_m: 8.5
   smooth_frames: 3
   baseline_frames: 30
-  fill_threshold_m: 0.003
+  fill_threshold_m: 0.015
   max_height_step_m: 1.5
 
   # Auto-populated from tank dimensions. Override here if needed.
