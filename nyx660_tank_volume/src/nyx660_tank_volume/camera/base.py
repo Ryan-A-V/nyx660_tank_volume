@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
+import abstractmethod
 
 
 @dataclass
@@ -21,4 +22,9 @@ class CameraBackend:
         raise NotImplementedError
 
     def get_frame(self) -> DepthFrame:
+        raise NotImplementedError
+    
+    @property
+    @abstractmethod
+    def is_open(self) -> bool:
         raise NotImplementedError

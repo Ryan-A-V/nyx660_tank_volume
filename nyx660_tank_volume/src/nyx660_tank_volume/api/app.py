@@ -43,8 +43,11 @@ def build_app(cfg: AppConfig, service: TankVolumeService) -> FastAPI:
             "status": "ok",
             "backend": cfg.camera.backend,
             "has_calibration": service.calibration is not None,
+            "calibration_age_seconds": service.calibration_age_seconds(),
             "measurement_loop_running": loop_stats.get("is_running", False),
             "measurement_fps": loop_stats.get("fps", 0.0),
+            "sensor_connected": service.is_sensor_connected(),
+            "streaming": service.is_streaming(),
         }
 
     @app.get("/state", dependencies=[Depends(require_token)])

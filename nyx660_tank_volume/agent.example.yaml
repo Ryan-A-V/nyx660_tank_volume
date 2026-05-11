@@ -1,0 +1,76 @@
+# Agent configuration — separate from the measurement service config.yaml.
+# Read by the nyx660-agent process.
+
+agent:
+  # Informational only — OPS resolves the unit from the bearer token.
+  # Used in agent-side logs.
+  unit_id: "U-001"
+  version: "0.1.0"
+
+ops:
+  # Base URL of the OPS lidar API.
+  base_url: "https://benchmarkdata.net/api/v1/lidar"
+
+  # Bearer token issued by OPS admin (Admin → Lidar → Tokens).
+  # In production, prefer reading from an env var.
+  api_token: "replace-me"
+
+  # Optional: if set, agent reads token from this env var instead of api_token above.
+  # api_token_env: "NYX660_AGENT_TOKEN"
+
+  # HTTP timeouts (seconds).
+  request_timeout_s: 30.0
+  connect_timeout_s: 10.0
+
+  # Backoff when OPS is unreachable (seconds). Capped exponential with jitter.
+  backoff_initial_s: 5.0
+  backoff_max_s: 300.0
+
+local:
+  # URL of the measurement service running on this Jetson.
+  base_url: "http://127.0.0.1:8080"
+
+  # Same x-api-key the measurement service expects.
+  # Should match server.api_token in config.yaml.
+  api_token: "your-token-here"
+
+  request_timeout_s: 15.0
+
+poll:
+  # How often to call POST /poll (seconds).
+  interval_s: 30.0
+
+  # When true, the latest measurement is attached to every /poll request.
+  # When false, measurements stay local and are only sent in response to
+  # measure_now or request_history commands.
+  attach_latest_measurement: true
+
+  # Max wall-clock time for any single command to execute.
+  command_timeout_s: 120.0
+
+storage:
+  # Path to agent's local SQLite (separate from measurements.db).
+  db_path: "./data/agent.db"
+
+config_push:
+  # Path to the measurement service's config file (target for push_config).
+  target_config_path: "./config.yaml"
+
+  # Where to keep the previous config for automatic rollback.
+  backup_config_path: "./config.yaml.prev"
+
+  # Systemd unit to restart on config push and restart_loop/restart_sensor.
+  service_name: "helios2-tank-volume.service"
+
+  # Seconds to wait for the measurement service to become healthy after restart.
+  # If no successful /health response in this window, roll back.
+  health_check_timeout_s: 60.0
+  health_check_interval_s: 2.0
+
+alert_defaults:
+  # Fallback thresholds used until OPS pushes a config with operator-set values.
+  # These are placeholders — expect to tune them.
+  tank_full_threshold: 0.95
+  tank_low_threshold: 0.05
+  min_valid_pixel_ratio: 0.30
+  calibration_max_age_seconds: 2592000   # 30 days

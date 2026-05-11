@@ -1,0 +1,26 @@
+[Unit]
+Description=NYX660 Tank Volume OPS Agent
+Documentation=https://github.com/Ryan-A-V/nyx660_tank_volume
+After=network-online.target helios2-tank-volume.service
+Wants=network-online.target
+# Don't bind hard to the measurement service — the agent should keep running
+# (and reporting health to OPS) even if the measurement service is down.
+
+[Service]
+Type=simple
+User=nyx660
+Group=nyx660
+WorkingDirectory=/opt/nyx660_tank_volume/nyx660_tank_volume
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/nyx660_tank_volume/nyx660_tank_volume/.venv/bin/nyx660-agent --config /opt/nyx660_tank_volume/nyx660_tank_volume/agent.yaml
+Restart=on-failure
+RestartSec=10s
+
+# For push_config / restart_loop / restart_sensor commands, the agent needs to
+# restart the measurement service via systemd. Grant permission via sudoers:
+#   nyx660 ALL=(root) NOPASSWD: /bin/systemctl restart helios2-tank-volume.service
+# (the agent invokes `sudo systemctl restart helios2-tank-volume.service`).
+# Wire this when those handlers land in the next iteration.
+
+[Install]
+WantedBy=multi-user.target

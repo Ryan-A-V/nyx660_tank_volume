@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 from typing import Optional
+from datetime import datetime, timezone
 
 import numpy as np
 
@@ -236,3 +237,35 @@ class TankVolumeService:
         if self._loop is not None:
             self._loop.set_testing_mode(enabled)
         logger.info("Testing mode %s", "enabled" if enabled else "disabled")
+
+
+    # ------------------------------------------------------------------
+    # Diagnostics
+    # ------------------------------------------------------------------
+
+    def is_sensor_connected(self) -> bool:
+        """True when the camera backend has an active sensor connection."""
+        return self._camera.is_open if self._camera else False
+
+    def is_streaming(self) -> bool:
+        """True when the loop is alive AND a fresh frame arrived recently.
+        'Recently' is 2x the expected frame interval based on loop FPS."""
+        if not self._loop or not self._loop.is_running():
+            return False
+        last_frame_ts = self._loop.last_frame_timestamp_utc()
+        if last_frame_ts is None:
+            return False
+        age_seconds = (datetime.now(timezone.utc) - last_frame_ts).total_seconds()
+        fps = self._loop.fps() or 1.0
+        max_age = max(2.0 / fps, 1.0)   # at least 1 second tolerance
+        return age_seconds <= max_age
+
+    def calibration_age_seconds(self) -> Optional[float]:
+        """Seconds since the current calibration was created.
+        Returns None if no calibration is loaded."""
+        if self.calibration is None:
+            return None
+        created_at = getattr(self.calibration, "created_at_utc", None)
+        if created_at is None:
+            return None
+        return (datetime.now(timezone.utc) - created_at).total_seconds()
