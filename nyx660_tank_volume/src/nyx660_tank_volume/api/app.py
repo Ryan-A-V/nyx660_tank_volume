@@ -56,12 +56,15 @@ def build_app(cfg: AppConfig, service: TankVolumeService) -> FastAPI:
         frame = service.last_frame
         return {
             "has_calibration": service.calibration is not None,
+            "calibration_age_seconds": service.calibration_age_seconds(),
             "last_measurement": latest.to_dict() if latest else None,
             "last_frame_timestamp_utc": frame.timestamp_utc
             if frame
             else None,
             "loop_stats": service.get_loop_stats(),
             "store_stats": service.get_store_stats(),
+            "sensor_connected": service.is_sensor_connected(),
+            "streaming": service.is_streaming(),
         }
 
     # ------------------------------------------------------------------

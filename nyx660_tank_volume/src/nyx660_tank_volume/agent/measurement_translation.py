@@ -18,21 +18,16 @@ from typing import Any, Optional
 # Mapping from local field names to OPS field names. Update this as the
 # local measurement schema evolves.
 _FIELD_MAP: dict[str, str] = {
-    # Direct matches (kept here for documentation):
-    "volume_m3": "volume_m3",
-    "volume_litres": "volume_litres",
-    "fill_ratio": "fill_ratio",
-    "valid_pixel_ratio": "valid_pixel_ratio",
-    "notes": "notes",
-    "measured_at": "measured_at",
-    # Renames — adjust these as the local schema is confirmed.
-    "occupied_surface_area_m2": "surface_area_m2",
-    "average_fill_height_m": "avg_height_m",
-    "max_fill_height_m": "max_height_m",
-    # Some installations may already emit OPS-named fields directly.
-    "surface_area_m2": "surface_area_m2",
-    "avg_height_m": "avg_height_m",
-    "max_height_m": "max_height_m",
+    # Local dataclass field           → OPS schema field
+    "timestamp_utc":                    "measured_at",
+    "estimated_volume_m3":              "volume_m3",
+    "estimated_volume_liters":          "volume_litres",
+    "relative_fill_ratio":              "fill_ratio",
+    "occupied_surface_area_m2":         "surface_area_m2",
+    "average_fill_height_m":            "avg_height_m",
+    "max_fill_height_m":                "max_height_m",
+    "valid_pixel_ratio":                "valid_pixel_ratio",
+    "notes":                            "notes",
 }
 
 # Top-level OPS fields. Anything in the local measurement that isn't one of
