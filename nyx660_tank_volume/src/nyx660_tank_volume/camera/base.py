@@ -14,7 +14,7 @@ class DepthFrame:
     rgb: Optional[np.ndarray] = None
 
 
-class CameraBackend:
+class CameraBackend(ABC):
     def open(self) -> None:
         raise NotImplementedError
 
@@ -26,5 +26,4 @@ class CameraBackend:
     
     @property
     @abstractmethod
-    def is_open(self) -> bool:
-        raise NotImplementedError
+    def is_open(self) -> bool: ...

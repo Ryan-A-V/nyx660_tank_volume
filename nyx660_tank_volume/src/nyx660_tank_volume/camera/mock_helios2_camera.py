@@ -141,6 +141,10 @@ class MockHelios2WideCamera(CameraBackend):
             timestamp_utc=datetime.now(timezone.utc).isoformat(),
             rgb=None,
         )
+    @property
+    def is_open(self) -> bool:
+        """True when the device is connected and streaming."""
+        return self._device is not None and self._streaming
 
     def _generate_filled_scene(
         self,

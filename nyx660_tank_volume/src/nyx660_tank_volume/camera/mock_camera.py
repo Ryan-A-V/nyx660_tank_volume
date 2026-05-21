@@ -53,3 +53,7 @@ class MockNyx660Camera(CameraBackend):
             timestamp_utc=datetime.now(timezone.utc).isoformat(),
             rgb=rgb,
         )
+    @property
+    def is_open(self) -> bool:
+        """True when the device is connected and streaming."""
+        return self._device is not None and self._streaming
