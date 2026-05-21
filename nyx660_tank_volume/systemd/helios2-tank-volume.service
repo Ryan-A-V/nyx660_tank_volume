@@ -5,10 +5,10 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=jetson
-Group=jetson
-WorkingDirectory=/opt/nyx660_tank_volume
-ExecStart=/opt/nyx660_tank_volume/.venv/bin/python -m nyx660_tank_volume.main --config /opt/nyx660_tank_volume/config.yaml
+User=ryan
+Group=ryan
+WorkingDirectory=/home/ryan/opt/nyx660_tank_volume/nyx660_tank_volume
+ExecStart=/home/ryan/opt/nyx660_tank_volume/.venv/bin/nyx660-server --config home/ryan/opt/nyx660_tank_volume/nyx660_tank_volume/config.yaml
 
 # Restart on failure with a brief delay
 Restart=on-failure
@@ -29,8 +29,7 @@ AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
 # Hardening
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/opt/nyx660_tank_volume/data
-ProtectHome=true
+ReadWritePaths=/home/ryan/opt/nyx660_tank_volume/data
 
 [Install]
 WantedBy=multi-user.target
