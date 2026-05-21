@@ -250,13 +250,20 @@ class TankVolumeService:
     def is_streaming(self) -> bool:
         """True when the loop is alive AND a fresh frame arrived recently.
         'Recently' is 2x the expected frame interval based on loop FPS."""
-        if not self._loop or not self._loop.is_running():
+        if not self._loop or not self._loop.is_running:
             return False
-        last_frame_ts = self._loop.last_frame_timestamp_utc()
-        if last_frame_ts is None:
+        last_frame = self._loop.get_latest_frame()
+        if last_frame is None or not last_frame.timestamp_utc:
             return False
-        age_seconds = (datetime.now(timezone.utc) - last_frame_ts).total_seconds()
-        fps = self._loop.fps() or 1.0
+        try:
+            last_ts = datetime.fromisoformat(last_frame.timestamp_utc)
+        except ValueError:
+            return False
+        if last_ts.tzinfo is None:
+            last_ts = last_ts.replace(tzinfo=timezone.utc)
+        age_seconds = (datetime.now(timezone.utc) - last_ts).total_seconds()
+        stats = self._loop.get_stats()
+        fps = stats.get("fps", 0.0) or 1.0
         max_age = max(2.0 / fps, 1.0)   # at least 1 second tolerance
         return age_seconds <= max_age
 
@@ -265,7 +272,13 @@ class TankVolumeService:
         Returns None if no calibration is loaded."""
         if self.calibration is None:
             return None
-        created_at = getattr(self.calibration, "created_at_utc", None)
-        if created_at is None:
+        created_str = getattr(self.calibration, "created_utc", None)
+        if not created_str:
             return None
+        try:
+            created_at = datetime.fromisoformat(created_str)
+        except ValueError:
+            return None
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
         return (datetime.now(timezone.utc) - created_at).total_seconds()
