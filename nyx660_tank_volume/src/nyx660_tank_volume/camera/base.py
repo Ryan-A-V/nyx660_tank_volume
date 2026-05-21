@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
-import abstractmethod
+from abc import ABC, abstractmethod
 
 
 @dataclass
