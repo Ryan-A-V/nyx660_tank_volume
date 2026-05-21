@@ -78,4 +78,9 @@ def translate_measurement(local_m: Optional[dict[str, Any]]) -> Optional[dict[st
     if merged:
         out["payload"] = merged
 
+    # OPS wants `notes` as a single string; we produce a list of diagnostic flags.
+    if isinstance(out.get("notes"), list):
+        notes_list = out["notes"]
+        out["notes"] = "; ".join(notes_list) if notes_list else None
+
     return out
