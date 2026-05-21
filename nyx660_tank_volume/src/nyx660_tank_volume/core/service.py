@@ -245,7 +245,7 @@ class TankVolumeService:
 
     def is_sensor_connected(self) -> bool:
         """True when the camera backend has an active sensor connection."""
-        return self._camera.is_open if self._camera else False
+        return self.camera.is_open if self.camera else False
 
     def is_streaming(self) -> bool:
         """True when the loop is alive AND a fresh frame arrived recently.
